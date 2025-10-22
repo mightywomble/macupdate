@@ -231,7 +231,13 @@ if [[ "$MAKE_SCRIPT" =~ ^([yY][eE][sS]|[yY])$ ]]; then
                 echo "- $app_name_prompt: (no candidates parsed)"
                 continue
             fi
-            echo "- $app_name_prompt:"
+
+            echo "- $app_name_prompt: ${total} alternative(s) found."
+            read -r -p "  Install alternative apps for this? [Y/n]: " yn </dev/tty
+            if [[ -n "$yn" && ! "$yn" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                # Skip all alternatives for this app
+                continue
+            fi
 
             i=1
             for cand in "${tokens[@]}"; do

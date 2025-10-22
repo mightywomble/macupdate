@@ -1,0 +1,103 @@
+---
+- name: Reinstall Homebrew apps
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    formulae:
+      - ansible
+      - btop
+      - ca-certificates
+      - certifi
+      - cffi
+      - cryptography
+      - jansson
+      - libevent
+      - libsodium
+      - libssh
+      - libyaml
+      - mpdecimal
+      - mtr
+      - ncurses
+      - openssl@3
+      - pycparser
+      - python@3.13
+      - readline
+      - speedtest
+      - speedtest-cli
+      - sqlite
+      - sshm
+      - tea
+      - tmux
+      - tree
+      - trippy
+      - utf8proc
+      - xz
+    casks:
+      - 1password
+      - anydo
+      - applite
+      - asana
+      - balenaetcher
+      - brave-browser
+      - capcut
+      - captin
+      - caskly@beta
+      - daisydisk
+      - discord
+      - google-chrome
+      - google-drive
+      - jordanbaird-ice
+      - logi-options+
+      - macupdater
+      - microsoft-auto-update
+      - microsoft-excel
+      - microsoft-onenote
+      - microsoft-outlook
+      - microsoft-powerpoint
+      - microsoft-teams
+      - microsoft-word
+      - naps2
+      - nextcloud
+      - nextcloud-talk
+      - nudge
+      - onedrive
+      - onlyoffice
+      - openvisualtraceroute
+      - plex
+      - proxy-audio-device
+      - remote-desktop-manager
+      - sipgate-softphone
+      - slack
+      - spotify
+      - stats
+      - tailscale-app
+      - utm
+      - visual-studio-code
+      - warp
+      - whatsapp
+      - wireshark-app
+      - zoom
+  tasks:
+    - name: Ensure Homebrew is installed
+      shell: |
+        if ! command -v brew >/dev/null; then
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        fi
+      args:
+        executable: /bin/bash
+      environment:
+        NONINTERACTIVE: "1"
+
+    - name: Install Homebrew formulae
+      community.general.homebrew:
+        name: "{{ formulae }}"
+        state: present
+        update_homebrew: true
+      when: formulae | length > 0
+
+    - name: Install Homebrew casks
+      community.general.homebrew_cask:
+        name: "{{ casks }}"
+        state: present
+      when: casks | length > 0
