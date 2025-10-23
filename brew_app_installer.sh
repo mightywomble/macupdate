@@ -67,6 +67,10 @@ install_cask_with_replace() {
 # Casks to install
 CASKS=(
   "electric-sheep"
+  "logi-options+"
+  "maintenance"
+  "onyx"
+  "proxy-audio-device"
   "tailscale"
   "wireshark"
   "applite"
