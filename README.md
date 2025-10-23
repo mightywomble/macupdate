@@ -200,6 +200,303 @@ Generated playbook (snippet):
 - The script uses `mdfind` for speed; Spotlight indexing should be enabled
 - Online API used: https://formulae.brew.sh/api
 
+
+# Keeping track of Brew Updates
+
+
+This is a simple script for [SwiftBar](https://swiftbar.app/) that adds a Homebrew update notifier to your macOS menu bar.
+
+It silently checks for outdated Homebrew packages in the background and displays a small icon with the number of available updates. It provides a simple, clickable menu to update individual packages, dismiss updates, or upgrade all packages at once.
+
+Instead of manually running `brew outdated` every day, this gives you a passive, at-a-glance reminder and brings a convenient GUI-like experience to your command-line package manager.
+
+## Features
+
+-   ✅ **Auto-detects Homebrew:** Works out-of-the-box on both Apple Silicon (e.g., M1/M2/M3) and Intel-based Macs.
+    
+-   🖥️ **Native Look & Feel:** Sits in your menu bar and uses Apple's SF Symbols for a clean, system-integrated icon (`:arrow.down.circle:` or `:checkmark.circle:`).
+    
+-   🔔 **Update Counter:** Displays a badge with the number of available updates (e.g., `(3)`).
+    
+-   📋 **Detailed List:** Clicking the icon shows a dropdown list of all packages needing an update, complete with their `from -> to` version numbers.
+    
+-   🖱️ **One-Click Actions:**
+    
+    -   **Update:** Update a single package by clicking "Update". A Terminal window will pop up to show the process.
+        
+    -   **Dismiss:** Ignore a specific update (e.g., a buggy version) until the _next_ version is released.
+        
+    -   **Upgrade All:** A convenient button to run `brew upgrade` for all packages.
+        
+-   ⚙️ **Configurable Schedule:** Runs every hour by default. You can change this by renaming the file (e.g., `brew_updates.30m.sh` for 30 minutes).
+    
+-   🧹 **Utility Functions:** Includes "Refresh Menu" and "Clear Dismissed List" for easy management.
+    
+
+## Installation
+
+This script requires [SwiftBar](https://swiftbar.app/) and [jq](https://stedolan.github.io/jq/) (a command-line JSON processor).
+
+### Step 1: Install Tools
+
+Open your Terminal and use Homebrew to install `swiftbar` and `jq`:
+
+Bash
+
+```
+brew install swiftbar jq
+
+```
+
+### Step 2: Set Up SwiftBar Plugin Folder
+
+1.  Launch **SwiftBar** from your Applications folder.
+    
+2.  On first launch, it will ask you to choose a "Plugin Folder." We recommend creating a dedicated folder, such as `~/Documents/SwiftBar` or `~/Tools/SwiftBar`.
+    
+3.  If you already use SwiftBar, you can find your folder location by clicking the SwiftBar icon and going to **Preferences... > Plugin Folder**.
+    
+
+### Step 3: Create the Script File
+
+1.  Navigate to the Plugin Folder you just set up.
+    
+2.  Create a new file named `brew_updates.1h.sh`.
+    
+    -   The `.1h` tells SwiftBar to run this script **every 1 hour**. You can change this to `10m` (10 minutes), `6h` (6 hours), etc.
+        
+3.  Copy the complete script from "The Script" section below and paste it into this new file.
+    
+
+### Step 4: Make the Script Executable
+
+This is a crucial step. The script will not run unless it has permission to.
+
+Open your Terminal and run the `chmod +x` command on your new script file. For example, if you used the `~/Documents/SwiftBar` folder:
+
+Bash
+
+```
+chmod +x ~/Documents/SwiftBar/brew_updates.1h.sh
+
+```
+
+### Step 5: Refresh
+
+The script should appear in your menu bar automatically. If not, click the main SwiftBar icon and select **Preferences > Refresh All**.
+
+## The Script
+
+Save the following code as `brew_updates.1h.sh` in your plugin folder.
+
+Bash
+
+```
+#!/bin/bash
+
+# --- Configuration ---
+# Auto-detect the brew path
+if [ -f "/opt/homebrew/bin/brew" ]; then
+  BREW_PATH="/opt/homebrew/bin/brew" # Apple Silicon path
+elif [ -f "/usr/local/bin/brew" ]; then
+  BREW_PATH="/usr/local/bin/brew" # Intel path
+else
+  # If brew is not found, show an error in the menu bar and exit
+  echo ":exclamationmark.triangle: | symbolize=true templateImage=true"
+  echo "---"
+  echo "Homebrew executable not found."
+  echo "Searched in /opt/homebrew/bin and /usr/local/bin"
+  exit 1
+fi
+# --- End Configuration ---
+
+
+# This is the path to the script itself, provided by SwiftBar
+# We use it so the "Dismiss" action can call this same script.
+SELF_PATH="${SWIFTBAR_PLUGIN_PATH}"
+
+# File to store dismissed updates.
+# We'll store "AppName@VersionTo" strings here.
+DISMISSED_FILE="$HOME/.brew_updates_dismissed.txt"
+touch "$DISMISSED_FILE" # Ensure the file exists
+
+# --- Handle Actions ---
+# This part runs *only* if the script is called with "dismiss"
+# as the first argument (i.e., you clicked "Dismiss").
+if [ "$1" == "dismiss" ]; then
+  APP_NAME=$2
+  VERSION_TO=$3
+  
+  # Add the specific "App@Version" to the dismissed file
+  echo "${APP_NAME}@${VERSION_TO}" >> "$DISMISSED_FILE"
+  
+  # Exit successfully. We don't need to render a menu.
+  exit 0
+fi
+
+# --- Main Menu Logic ---
+# This part runs on the hourly schedule.
+
+# Get all outdated info in one JSON blob from brew.
+# We use '|| true' to prevent the script from failing (and showing an error)
+# if brew itself has a temporary error.
+JSON_OUTPUT=$("${BREW_PATH}" outdated --json=v2 || true)
+
+# If JSON is empty (e.g., brew error), show an error icon and exit
+if [ -z "$JSON_OUTPUT" ]; then
+  echo ":exclamationmark.triangle: | symbolize=true templateImage=true"
+  echo "---"
+  echo "Error: Could not run 'brew outdated'"
+  exit 0
+fi
+
+# Use 'jq' to combine formulae and casks into a single,
+# easy-to-loop stream of JSON objects.
+ITEMS=$(echo "$JSON_OUTPUT" | jq -c '.formulae[] , .casks[]')
+
+COUNT=0
+MENU_ITEMS="" # We'll build the list of menu items here
+
+# Loop through each outdated item
+while read -r item; do
+  # Parse the details for this item
+  NAME=$(echo "$item" | jq -r '.name')
+  V_FROM=$(echo "$item" | jq -r '.installed_versions[0]')
+  V_TO=$(echo "$item" | jq -r '.current_version')
+
+  # Sanity check: If brew returns a phantom item with no name, skip it.
+  if [ -z "$NAME" ]; then
+    continue
+  fi
+
+  # Create a unique key for this specific update (e.g., "htop@3.3.0")
+  DISMISS_KEY="${NAME}@${V_TO}"
+
+  # Check if this *exact* update is in our dismissed file.
+  # -F: Treat as fixed string
+  # -x: Match the whole line
+  if ! grep -q -F -x "$DISMISS_KEY" "$DISMISSED_FILE"; then
+    # --- This update is NOT dismissed ---
+    
+    # 1. Increment the counter
+    COUNT=$((COUNT + 1))
+    
+    # 2. Add the main line for this app to our menu string
+    # The \n is a newline character.
+    MENU_ITEMS+="${NAME} ${V_FROM} → ${V_TO}\n"
+    
+    # 3. Add the "Update" sub-menu item
+    # | shell=... runs a command when clicked.
+    # terminal=true opens a new Terminal window for it.
+    # refresh=true tells SwiftBar to re-run this script when the command finishes.
+    MENU_ITEMS+="--Update | shell='${BREW_PATH}' param1=upgrade param2=${NAME} terminal=true refresh=true\n"
+    
+    # 4. Add the "Dismiss" sub-menu item
+    # This calls this *same script* ($SELF_PATH) with args:
+    # "dismiss", the app name, and the version to ignore.
+    MENU_ITEMS+="--Dismiss | shell='${SELF_PATH}' param1=dismiss param2=${NAME} param3=${V_TO} refresh=true\n"
+  fi
+done <<< "$ITEMS" # This syntax feeds the $ITEMS variable into the 'while' loop
+
+
+# --- Print the Final Menu to SwiftBar ---
+
+# 1. The main menu bar item
+# The very first line of output is what shows in the menu bar.
+if [ "$COUNT" -gt 0 ]; then
+  # Show the icon and the count.
+  # :arrow.down.circle: is the inline name for the SF Symbol.
+  # | symbolize=true tells SwiftBar to convert the :name: into an icon.
+  # | templateImage=true is the correct parameter to make the icon match the menu bar color.
+  echo ":arrow.down.circle: ($COUNT) | symbolize=true templateImage=true"
+else
+  # Just show the checkmark icon
+  echo ":checkmark.circle: | symbolize=true templateImage=true"
+fi
+
+# 2. A separator line
+echo "---"
+
+# 3. The dynamic list of apps
+if [ "$COUNT" -gt 0 ]; then
+  echo -e "$MENU_ITEMS" # The '-e' interprets the \n newlines
+else
+  echo "All packages are up-to-date. ✅"
+fi
+
+# 4. Static utility items at the bottom
+echo "---"
+echo "Upgrade All Packages"
+echo "--Run in Terminal | shell='${BREW_PATH}' param1=upgrade terminal=true refresh=true"
+echo "Refresh Menu | refresh=true"
+echo "Clear Dismissed List | shell=/bin/rm param1=${DISMISSED_FILE} terminal=false refresh=true"
+
+```
+
+## Code Breakdown
+
+Here’s what each section of the script does:
+
+1.  **Configuration (`BREW_PATH`)** The script starts by checking for the `brew` executable in the two most common locations: `/opt/homebrew/bin` (for Apple Silicon Macs) and `/usr/local/bin` (for Intel Macs). It stores the correct path in a `$BREW_PATH` variable. If it can't find `brew`, it shows an error icon and stops.
+    
+2.  **Global Variables**
+    
+    -   `$SELF_PATH`: SwiftBar provides this variable. It's the full path to this script, which we need so the "Dismiss" action can call itself.
+        
+    -   `$DISMISSED_FILE`: This defines a simple text file, `.brew_updates_dismissed.txt`, in your home directory. This file will store a list of all updates you've chosen to ignore.
+        
+3.  **Action Handling (for "Dismiss")** This block (`if [ "$1" == "dismiss" ]...`) checks if the script was run with the first argument "dismiss". When you click the "Dismiss" sub-menu item, the script is re-run with `dismiss`, the app name, and the "to" version as arguments. This code catches those arguments, appends a line like `AppName@VersionTo` into the `$DISMISSED_FILE`, and then exits.
+    
+4.  **Main Menu Logic (JSON Parsing)** This is the main part of the script that runs on its hourly schedule.
+    
+    -   It runs `${BREW_PATH} outdated --json=v2` to get a detailed, machine-readable list of all outdated packages.
+        
+    -   It pipes this JSON output to `jq`, which extracts and flattens the list of formulas and casks into a single, easy-to-loop format.
+        
+5.  **The Main Loop (`while read -r item...`)** The script loops through each line of output from `jq`.
+    
+    -   It parses the `name`, `V_FROM` (installed version), and `V_TO` (available version).
+        
+    -   It includes a **sanity check** (`if [ -z "$NAME" ]...`) to skip any "phantom" updates that `brew` might report (where the name is blank).
+        
+    -   It creates a unique `DISMISS_KEY` (e.g., `htop@3.3.0`).
+        
+    -   It uses `grep` to check if that _exact_ key exists in the `$DISMISSED_FILE`.
+        
+    -   If the key is **not** found, it increments the `$COUNT` and builds the menu strings for that app, including the `AppName v1.0 → v1.1` title line and its "Update" and "Dismiss" sub-menu items.
+        
+6.  **Printing the Menu (The `echo` commands)** This is what generates the menu you see.
+    
+    -   **Menu Bar Icon**: The _very first line_ `echo`-ed is what appears in the menu bar. We use `if [ "$COUNT" -gt 0 ]...` to show the update icon `(:arrow.down.circle:)` and count, or the checkmark icon `(:checkmark.circle:)` if the count is zero. The `| symbolize=true templateImage=true` parameters tell SwiftBar to convert the text name into a real SF Symbol icon and color it to match your menu bar.
+        
+    -   **Separator**: `echo "---"` creates the horizontal divider line.
+        
+    -   **Dynamic List**: `echo -e "$MENU_ITEMS"` prints the entire list of updates we built in the loop.
+        
+    -   **Static Items**: The final `echo` commands print the utility items at the bottom of the list ("Upgrade All Packages", "Refresh Menu", etc.).
+        
+
+## Troubleshooting
+
+-   **Problem:** The icon in my menu bar is three dots (`...`) or an error (`⚠️`).
+    
+    -   **Solution 1:** You may not have `jq` installed. Run `brew install jq` in your Terminal.
+        
+    -   **Solution 2:** The script is not executable. Run `chmod +x /path/to/your/brew_updates.1h.sh` (see Step 4).
+        
+    -   **Solution 3:** `brew` is not in one of the auto-detected paths. Run `which brew` in your Terminal, copy the path, and manually replace the `BREW_PATH="..."` logic at the top of the script with your path, like: `BREW_PATH="/your/custom/path/bin/brew"`.
+        
+-   **Problem:** I see a blank `->` item in the list.
+    
+    -   **Solution:** You are running an older version of this script. Copy the latest version from this README, which includes a sanity check to filter out these "phantom" updates. After saving, click "Refresh Menu".
+        
+-   **Problem:** My script won't refresh, or my script changes aren't showing up.
+    
+    -   **Solution:** SwiftBar only runs the script based on the time in its filename (e.g., `.1h`). To force an update, either click the "Refresh Menu" item inside the script's own dropdown, or click the main SwiftBar icon and go to **Preferences > Refresh All**.
+
+
+
+
 ## Contributing
 Issues and PRs welcome. Please keep changes POSIX-sh compatible and prefer single-pass lookups for performance.
 
