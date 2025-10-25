@@ -94,12 +94,8 @@ while read -r item; do
     MENU_ITEMS+="${NAME} ${V_FROM} → ${V_TO}\n"
     
     # 3. Add the "Update" sub-menu item
-    # | shell=... runs a command when clicked.
-    # terminal=true opens a new Terminal window for it.
-    # refresh=true tells SwiftBar to re-run this script when the command finishes.
-    #
-    # *** MODIFIED: Using $BREW_PATH variable ***
-    MENU_ITEMS+="--Update | shell='${BREW_PATH}' param1=upgrade param2=${NAME} terminal=true refresh=true\n"
+    # Open Terminal, run the update, then auto-close the Terminal window when done.
+    MENU_ITEMS+="--Update | shell=/bin/bash param1=-lc param2=\"\\\"${BREW_PATH}\\\" upgrade ${NAME}; /usr/bin/osascript -e 'tell application \\\"Terminal\\\" to if (count of windows) > 0 then close front window'\" terminal=true refresh=true\n"
     
     # 4. Add the "Dismiss" sub-menu item
     # This calls this *same script* ($SELF_PATH) with args:
@@ -139,6 +135,6 @@ echo "---"
 echo "Upgrade All Packages"
 #
 # *** MODIFIED: Using $BREW_PATH variable ***
-echo "--Run in Terminal | shell='${BREW_PATH}' param1=upgrade terminal=true refresh=true"
+echo "--Run in Terminal | shell=/bin/bash param1=-lc param2=\"\\\"${BREW_PATH}\\\" upgrade; /usr/bin/osascript -e 'tell application \\\"Terminal\\\" to if (count of windows) > 0 then close front window'\" terminal=true refresh=true"
 echo "Refresh Menu | refresh=true"
 echo "Clear Dismissed List | shell=/bin/rm param1=${DISMISSED_FILE} terminal=false refresh=true"

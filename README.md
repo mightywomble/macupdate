@@ -502,3 +502,46 @@ Issues and PRs welcome. Please keep changes POSIX-sh compatible and prefer singl
 
 ## License
 MIT
+
+
+## SwiftBar: Disk Usage (disk-usage.1h.py)
+
+A SwiftBar plugin that lists all mounted disks and shows a compact, macOS‑like view of their usage.
+
+### What it does
+- Shows each mounted disk on its own line with a proportional usage bar.
+- Uses SF Symbols in the menubar and dropdown for a native look.
+- Displays: volume name, bar, used %, free (GB), and total (GB).
+- Provides actions per volume: Open, Reveal in Finder, and Eject.
+- Updates every hour (via the .1h filename suffix).
+
+### Features
+- Aligned, monospace columns for readability.
+- Color status by usage: green (<70%), orange (70–89%), red (90%+).
+- Finder integration (open/reveal) and diskutil unmount from the menu.
+- Overall usage shown in the menubar title.
+
+### Installation
+Requirements: SwiftBar and Python 3.
+
+1) Copy or symlink the plugin into your SwiftBar plugin folder.
+```bash path=null start=null
+ln -s "$(pwd)/disk-usage.1h.py" "$HOME/Library/Application Support/SwiftBar/Plugins/"
+```
+2) Ensure it’s executable (already set in repo):
+```bash path=null start=null
+chmod +x disk-usage.1h.py
+```
+3) Refresh SwiftBar (Preferences → Refresh All) if it doesn’t appear.
+
+To change the refresh interval, rename the file (e.g., `disk-usage.30m.py` for every 30 minutes).
+
+### How to update it
+- Pull the latest changes into this repository and SwiftBar will pick up updates on the next refresh.
+- Or edit `disk-usage.1h.py` locally; changes appear after Refresh All.
+
+### Customization
+You can tweak visuals inside `disk-usage.1h.py`:
+- FONT, FONT_SIZE, BAR_WIDTH
+- Thresholds for color (search for status_color)
+- Column widths and truncation of volume names
